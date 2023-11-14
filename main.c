@@ -12,6 +12,11 @@ int reader(char * path, char * buf){
         return NULL;
     }
     int size = read(fd, buf, 29);
+    if (size == -1){
+        printf("Invalid file.");
+        close(fd);
+        return NULL;
+    }
     close(fd);
     return size;
 }
@@ -20,6 +25,10 @@ int reader(char * path, char * buf){
 int main(){
     char buf[30];
     int size = reader("test.txt", buf);
+    if (size == NULL){
+        printf("Failed.");
+        return NULL;
+    }
     buf[size] = '\0';
     printf("%s\n", buf);
 }
