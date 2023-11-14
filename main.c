@@ -9,13 +9,13 @@ int reader(char * path, char * buf){
     int fd = open(path,0);
     if (fd == -1){
         printf("Invalid Filename or Path.");
-        return NULL;
+        return -1;
     }
     int size = read(fd, buf, 29);
     if (size == -1){
         printf("Invalid file.");
         close(fd);
-        return NULL;
+        return -1;
     }
     close(fd);
     return size;
@@ -25,9 +25,9 @@ int reader(char * path, char * buf){
 int main(){
     char buf[30];
     int size = reader("test.txt", buf);
-    if (size == NULL){
+    if (size == -1){
         printf("Failed.");
-        return NULL;
+        return -1;
     }
     buf[size] = '\0';
     printf("%s\n", buf);
