@@ -1,10 +1,21 @@
-#include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <sys/stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#define FAT_SIZE(bootSector) (((bootSector)->BPB_BytsPerSec)*((bootSector)->BPB_FATSz16)) 
+#define FAT_OFFSET(bootSector) ((((bootSector)->BPB_RsvdSecCnt)*((bootSector)->BPB_BytsPerSec)))
+
+typedef struct{
+    uint16_t data;
+    Node * nextNode;
+} Node;
+
+typedef struct{
+    Node * nextNode;
+    Node * lastNode;
+} ListHead;
+
 
 typedef struct __attribute__((__packed__))
 {
@@ -15,7 +26,7 @@ typedef struct __attribute__((__packed__))
     uint16_t BPB_BytsPerSec;
     // Bytes per Sector
     uint8_t BPB_SecPerClus;
-    // Sectors per Cluster
+    // Sectors per ClusterHeadNode
     uint16_t BPB_RsvdSecCnt;
     // Reserved Sector Count
     uint8_t BPB_NumFATs;
@@ -50,7 +61,38 @@ typedef struct __attribute__((__packed__))
     uint8_t BS_FilSysType[8]; // e.g. 'FAT16' (Not 0 terms.)
 } BootSector;
 
-int reader(char *path, void *bootSec, off_t offset)
+ListHead * createList(){
+    ListHead * list = (ListHead *) malloc(sizeof(ListHead));
+    list->nextNode = NULL;
+    list->lastNode = NULL;
+    return list;
+}
+
+void addNode(ListHead * list, uint16_t data){
+    Node * addedNode = (Node *) malloc(sizeof(Node));
+    addedNode->data = data;
+    addedNode->nextNode = NULL;
+    if (list->nextNode == NULL)
+        list->nextNode = addedNode;
+    
+    else
+        list->lastNode->nextNode = addedNode;
+    
+    list->lastNode = addedNode;
+}
+
+void freeList(ListHead * list){
+    Node * node = list->nextNode;
+    while(node !=NULL){
+        Node * nextNode = node->nextNode;
+        free(node);
+        node = nextNode;
+    }
+    free(list);
+
+}
+
+int reader(char *path, void *out, size_t bytes, off_t offset)
 {
     int fd = open(path, 0);
     if (fd == -1)
@@ -58,8 +100,8 @@ int reader(char *path, void *bootSec, off_t offset)
         printf("Invalid Filename or Path.");
         return -1;
     }
-    lseek(fd, offset, SEEK_CUR);
-    int size = read(fd, bootSec, 29);
+    lseek(fd, offset, SEEK_SET);
+    int size = read(fd, out, bytes);
     if (size == -1)
     {
         printf("Invalid file.");
@@ -72,9 +114,23 @@ int reader(char *path, void *bootSec, off_t offset)
 
 int main()
 {   
+    
 
     BootSector * bootSector = (BootSector *) malloc(sizeof(BootSector));
-    int size = reader("fat16.img", bootSector, 0);
+    
+    if ((reader("fat16.img", bootSector, sizeof(BootSector), 0)) == -1){
+        printf("Invalid file.");
+        return -1;
+    }
+    
+
+    uint16_t * FAT = (uint16_t *) malloc(FAT_SIZE(bootSector));
+
+    if ((reader("fat16.img", FAT,FAT_SIZE(bootSector), FAT_OFFSET(bootSector))) == -1){
+        printf("Invalid file.");
+        return -1;
+    }
+
     printf(
         "%-6d Bytes Per Sector\n%-6d Sectors per Cluster\n%-6d Reserved Sector Count\n%-6d Number of copies of FAT\n%-6d Size of root DIR\n%-6d Sectors\n%-6d Sectors in FAT\n%-6d Sectors if BPB_TotSec16==0\n%.11sNon zero terminated string\n",
         bootSector->BPB_BytsPerSec, 
