@@ -6,9 +6,9 @@
 #define FAT_SIZE(bootSector) (((bootSector)->BPB_BytsPerSec)*((bootSector)->BPB_FATSz16)) 
 #define FAT_OFFSET(bootSector) ((((bootSector)->BPB_RsvdSecCnt)*((bootSector)->BPB_BytsPerSec)))
 
-typedef struct{
+typedef struct Node{
     uint16_t data;
-    Node * nextNode;
+    struct Node * nextNode;
 } Node;
 
 typedef struct{
@@ -112,6 +112,17 @@ int reader(char *path, void *out, size_t bytes, off_t offset)
     return size;
 }
 
+ListHead * clusterCompiler(uint16_t * FAT, uint16_t index){
+    ListHead * clusterList = createList();
+    uint16_t clusterCursor = index;
+    while((clusterCursor < 0xFFF8) && (clusterCursor>1)){
+        addNode(clusterList,clusterCursor);
+        clusterCursor = FAT[clusterCursor];
+    }
+
+    return clusterList;
+}
+
 int main()
 {   
     
@@ -130,6 +141,10 @@ int main()
         printf("Invalid file.");
         return -1;
     }
+
+    ListHead * cluster = clusterCompiler(FAT,6);
+    printf("Hello\n");
+    freeList(cluster);
 
     printf(
         "%-6d Bytes Per Sector\n%-6d Sectors per Cluster\n%-6d Reserved Sector Count\n%-6d Number of copies of FAT\n%-6d Size of root DIR\n%-6d Sectors\n%-6d Sectors in FAT\n%-6d Sectors if BPB_TotSec16==0\n%.11sNon zero terminated string\n",
