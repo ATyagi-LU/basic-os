@@ -189,7 +189,7 @@ int main()
         reader("fat16.img", entry, sizeof(EntryStructure), (DIR_OFFSET(bootSector) + (i * sizeof(EntryStructure))));
         rootDir[i] = entry;
     }
-    printf("%-30s%s%20s%20s%20s%20s\n","Filename", "File Attributes", "Date Modified", "Time Modified", "File Size", "Starting Cluster");
+    printf("%-30s%s%20s%28s%21s%20s\n","Filename", "File Attributes", "Date Modified", "Time Modified", "File Size", "Starting Cluster");
     
     for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
     {   
@@ -221,7 +221,7 @@ int main()
         }
     }  
 
-    ListHead *cluster = clusterCompiler(FAT, 5);
+    ListHead *cluster = clusterCompiler(FAT, 3);
     freeList(cluster);
 
     printf(
