@@ -3,94 +3,129 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#define FAT_SIZE(bootSector) (((bootSector)->BPB_BytsPerSec)*((bootSector)->BPB_FATSz16)) 
-#define FAT_OFFSET(bootSector) ((((bootSector)->BPB_RsvdSecCnt)*((bootSector)->BPB_BytsPerSec)))
-#define DIR_OFFSET(bootSector) (((bootSector)->BPB_RsvedSecCnt + ((bootSector)->BPB_NumFATs * (bootSector)->BPB_FATSz16)) * (bootSector)->BPB_BytsPerSec)
+#define FAT_SIZE(bootSector) (((bootSector)->BPB_BytsPerSec) * ((bootSector)->BPB_FATSz16))
+#define FAT_OFFSET(bootSector) ((((bootSector)->BPB_RsvdSecCnt) * ((bootSector)->BPB_BytsPerSec)))
+#define DIR_OFFSET(bootSector) (((bootSector)->BPB_RsvdSecCnt + ((bootSector)->BPB_NumFATs * (bootSector)->BPB_FATSz16)) * (bootSector)->BPB_BytsPerSec)
 #define DIR_SIZE(bootSector) ((bootSector)->BPB_RootEntCnt * sizeof(EntryStructure))
+#define FLAGS_SET(entry, mask) (((entry) & (mask)) == (mask))
+#define FLAGS_NOT_SET(entry, mask) (((entry) & (mask)) == 0)
+#define ARCHIVE 0b00100000
+#define DIRECTORY 0b00010000
+#define VOL_NAME 0b00001000
+#define SYSTEM 0b00000100
+#define HIDDEN 0b00000010
+#define READ_ONLY 0b00000001
 
-
-typedef struct Node{
+typedef struct Node
+{
     uint16_t data;
-    struct Node * nextNode;
+    struct Node *nextNode;
 } Node;
 
-typedef struct{
-    Node * nextNode;
-    Node * lastNode;
+typedef struct
+{
+    Node *nextNode;
+    Node *lastNode;
 } ListHead;
 
 typedef struct __attribute__((__packed__))
 {
-    uint8_t DIR_Name[11];       // Non zero terminated string
-    uint8_t DIR_Attr;           // File attributes
-    uint8_t DIR_NTRes;          // Used by Windows NT, ignore
-    uint8_t DIR_CrtTimeTenth;   // Tenths of sec. 0...199
-    uint16_t DIR_CrtTime;       // Creation Time in 2s intervals
-    uint16_t DIR_CrtDate;       // Date file created
-    uint16_t DIR_LstAccDate;    // Date of last read or write
-    uint16_t DIR_FstClusHI;     // Top 16 bits file's 1st cluster
-    uint16_t DIR_WrtTime;       // Time of last write
-    uint16_t DIR_WrtDate;       // Date of last write
-    uint16_t DIR_FstClusLO;     // Lower 16 bits file's 1st cluster
-    uint32_t DIR_FileSize;      // File size in bytes
+    uint8_t DIR_Name[11];     // Non zero terminated string
+    uint8_t DIR_Attr;         // File attributes
+    uint8_t DIR_NTRes;        // Used by Windows NT, ignore
+    uint8_t DIR_CrtTimeTenth; // Tenths of sec. 0...199
+    uint16_t DIR_CrtTime;     // Creation Time in 2s intervals
+    uint16_t DIR_CrtDate;     // Date file created
+    uint16_t DIR_LstAccDate;  // Date of last read or write
+    uint16_t DIR_FstClusHI;   // Top 16 bits file's 1st cluster
+    uint16_t DIR_WrtTime;     // Time of last write
+    uint16_t DIR_WrtDate;     // Date of last write
+    uint16_t DIR_FstClusLO;   // Lower 16 bits file's 1st cluster
+    uint32_t DIR_FileSize;    // File size in bytes
 
 } EntryStructure;
 
-
-
 typedef struct __attribute__((__packed__))
 {
-    uint8_t BS_jmpBoot[3];      // x86 jump instr. to boot code
-    uint8_t BS_OEMName[8];      // What created the filesystem
-    uint16_t BPB_BytsPerSec;    // Bytes per Sector
-    uint8_t BPB_SecPerClus;     // Sectors per ClusterHeadNode
-    uint16_t BPB_RsvdSecCnt;    // Reserved Sector Count
-    uint8_t BPB_NumFATs;        // Number of copies of FAT
-    uint16_t BPB_RootEntCnt;    // FAT12/FAT16: size of root DIR
-    uint16_t BPB_TotSec16;      // Sectors, may be 0, see below
-    uint8_t BPB_Media;          // Media type, e.g. fixed
-    uint16_t BPB_FATSz16;       // Sectors in FAT (FAT12 or FAT16)
-    uint16_t BPB_SecPerTrk;     // Sectors per Track
-    uint16_t BPB_NumHeads;      // Number of heads in disk
-    uint32_t BPB_HiddSec;       // Hidden Sector count
-    uint32_t BPB_TotSec32;      // Sectors if BPB_TotSec16 == 0
-    uint8_t BS_DrvNum;          // 0 = floppy, 0x80 = hard disk
-    uint8_t BS_Reserved1;       //
-    uint8_t BS_BootSig;         // Should = 0x29
-    uint32_t BS_VolID;          // 'Unique' ID for volume
-    uint8_t BS_VolLab[11];      // Non zero terminated string
-    uint8_t BS_FilSysType[8];   // e.g. 'FAT16' (Not 0 terms.)
+    uint8_t BS_jmpBoot[3];    // x86 jump instr. to boot code
+    uint8_t BS_OEMName[8];    // What created the filesystem
+    uint16_t BPB_BytsPerSec;  // Bytes per Sector
+    uint8_t BPB_SecPerClus;   // Sectors per ClusterHeadNode
+    uint16_t BPB_RsvdSecCnt;  // Reserved Sector Count
+    uint8_t BPB_NumFATs;      // Number of copies of FAT
+    uint16_t BPB_RootEntCnt;  // FAT12/FAT16: size of root DIR
+    uint16_t BPB_TotSec16;    // Sectors, may be 0, see below
+    uint8_t BPB_Media;        // Media type, e.g. fixed
+    uint16_t BPB_FATSz16;     // Sectors in FAT (FAT12 or FAT16)
+    uint16_t BPB_SecPerTrk;   // Sectors per Track
+    uint16_t BPB_NumHeads;    // Number of heads in disk
+    uint32_t BPB_HiddSec;     // Hidden Sector count
+    uint32_t BPB_TotSec32;    // Sectors if BPB_TotSec16 == 0
+    uint8_t BS_DrvNum;        // 0 = floppy, 0x80 = hard disk
+    uint8_t BS_Reserved1;     //
+    uint8_t BS_BootSig;       // Should = 0x29
+    uint32_t BS_VolID;        // 'Unique' ID for volume
+    uint8_t BS_VolLab[11];    // Non zero terminated string
+    uint8_t BS_FilSysType[8]; // e.g. 'FAT16' (Not 0 terms.)
 } BootSector;
 
-ListHead * createList(){
-    ListHead * list = (ListHead *) malloc(sizeof(ListHead));
+void convertToNameString(uint8_t *name, char *output)
+{
+    int i, j = 0;
+    for (i = 0; i < 8; i++)
+    {
+        if (name[i] != ' ')
+        {
+            output[j] = name[i];
+            j++;
+        }
+    }
+    if (!((name[8] == ' ') && (name[9] == ' ') && (name[10] == ' '))){
+        output[j++] = '.';
+        for (i = 8; i < 11; i++)
+        {
+            if (name[i] != ' ')
+            {
+                output[j] = name[i];
+                j++;
+            }
+        }
+    }
+    output[j] = '\0';
+}
+
+ListHead *createList()
+{
+    ListHead *list = (ListHead *)malloc(sizeof(ListHead));
     list->nextNode = NULL;
     list->lastNode = NULL;
     return list;
 }
 
-void addNode(ListHead * list, uint16_t data){
-    Node * addedNode = (Node *) malloc(sizeof(Node));
+void addNode(ListHead *list, uint16_t data)
+{
+    Node *addedNode = (Node *)malloc(sizeof(Node));
     addedNode->data = data;
     addedNode->nextNode = NULL;
     if (list->nextNode == NULL)
         list->nextNode = addedNode;
-    
+
     else
         list->lastNode->nextNode = addedNode;
-    
+
     list->lastNode = addedNode;
 }
 
-void freeList(ListHead * list){
-    Node * node = list->nextNode;
-    while(node !=NULL){
-        Node * nextNode = node->nextNode;
+void freeList(ListHead *list)
+{
+    Node *node = list->nextNode;
+    while (node != NULL)
+    {
+        Node *nextNode = node->nextNode;
         free(node);
         node = nextNode;
     }
     free(list);
-
 }
 
 int reader(char *path, void *out, size_t bytes, off_t offset)
@@ -113,11 +148,13 @@ int reader(char *path, void *out, size_t bytes, off_t offset)
     return size;
 }
 
-ListHead * clusterCompiler(uint16_t * FAT, uint16_t index){
-    ListHead * clusterList = createList();
+ListHead *clusterCompiler(uint16_t *FAT, uint16_t index)
+{
+    ListHead *clusterList = createList();
     uint16_t clusterCursor = index;
-    while((clusterCursor < 0xFFF8) && (clusterCursor>1)){
-        addNode(clusterList,clusterCursor);
+    while ((clusterCursor < 0xFFF8) && (clusterCursor > 1))
+    {
+        addNode(clusterList, clusterCursor);
         clusterCursor = FAT[clusterCursor];
     }
 
@@ -125,39 +162,56 @@ ListHead * clusterCompiler(uint16_t * FAT, uint16_t index){
 }
 
 int main()
-{   
-    
+{
 
+    BootSector *bootSector = (BootSector *)malloc(sizeof(BootSector));
 
-
-    BootSector * bootSector = (BootSector *) malloc(sizeof(BootSector));
-    
-    if ((reader("fat16.img", bootSector, sizeof(BootSector), 0)) == -1){
-        printf("Invalid file.");
-        return -1;
-    }
-    
-        
-
-    uint16_t * FAT = (uint16_t *) malloc(FAT_SIZE(bootSector));
-
-    if ((reader("fat16.img", FAT,FAT_SIZE(bootSector), FAT_OFFSET(bootSector))) == -1){
+    if ((reader("fat16.img", bootSector, sizeof(BootSector), 0)) == -1)
+    {
         printf("Invalid file.");
         return -1;
     }
 
-    
+    uint16_t *FAT = (uint16_t *)malloc(FAT_SIZE(bootSector));
 
-    EntryStructure rootDir[bootSector->BPB_RootEntCnt];
+    if ((reader("fat16.img", FAT, FAT_SIZE(bootSector), FAT_OFFSET(bootSector))) == -1)
+    {
+        printf("Invalid file.");
+        return -1;
+    }
 
-    
+    EntryStructure *rootDir[bootSector->BPB_RootEntCnt];
 
-    ListHead * cluster = clusterCompiler(FAT,6);
+    for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
+    {
+        EntryStructure *entry = (EntryStructure *)malloc(sizeof(EntryStructure));
+        reader("fat16.img", entry, sizeof(EntryStructure), (DIR_OFFSET(bootSector) + (i * sizeof(EntryStructure))));
+        rootDir[i] = entry;
+    }
+
+    for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
+    {
+
+        if (!(FLAGS_SET(rootDir[i]->DIR_Attr, VOL_NAME | SYSTEM | HIDDEN | READ_ONLY) && FLAGS_NOT_SET(rootDir[i]->DIR_Attr, ARCHIVE | DIRECTORY)))
+        {
+            if (rootDir[i]->DIR_Name[0] == 0x0)
+                break;
+
+            if (rootDir[i]->DIR_Name[0] != 0xE5)
+            {
+                char name[13];
+                convertToNameString(rootDir[i]->DIR_Name, name);
+                printf("%s\n", name);
+            }
+        }
+    }
+
+    ListHead *cluster = clusterCompiler(FAT, 5);
     freeList(cluster);
 
     printf(
         "%-6d Bytes Per Sector\n%-6d Sectors per Cluster\n%-6d Reserved Sector Count\n%-6d Number of copies of FAT\n%-6d Size of root DIR\n%-6d Sectors\n%-6d Sectors in FAT\n%-6d Sectors if BPB_TotSec16==0\n%.11sNon zero terminated string\n",
-        bootSector->BPB_BytsPerSec, 
+        bootSector->BPB_BytsPerSec,
         bootSector->BPB_SecPerClus,
         bootSector->BPB_RsvdSecCnt,
         bootSector->BPB_NumFATs,
@@ -166,4 +220,11 @@ int main()
         bootSector->BPB_FATSz16,
         bootSector->BPB_TotSec32,
         bootSector->BS_VolLab);
+
+    for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
+    {
+        free(rootDir[i]);
+    }
+    free(bootSector);
+    free(FAT);
 }
