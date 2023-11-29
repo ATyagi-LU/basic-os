@@ -80,7 +80,8 @@ void convertToNameString(uint8_t *name, char *output)
             j++;
         }
     }
-    if (!((name[8] == ' ') && (name[9] == ' ') && (name[10] == ' '))){
+    if (!((name[8] == ' ') && (name[9] == ' ') && (name[10] == ' ')))
+    {
         output[j++] = '.';
         for (i = 8; i < 11; i++)
         {
@@ -180,7 +181,7 @@ int main()
         return -1;
     }
 
-    EntryStructure *rootDir[bootSector->BPB_RootEntCnt];
+    EntryStructure **rootDir = (EntryStructure**) malloc(DIR_SIZE(bootSector));
 
     for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
     {
@@ -188,9 +189,12 @@ int main()
         reader("fat16.img", entry, sizeof(EntryStructure), (DIR_OFFSET(bootSector) + (i * sizeof(EntryStructure))));
         rootDir[i] = entry;
     }
-
+    printf("%-30s%s%20s%20s%20s%20s\n","Filename", "File Attributes", "Date Modified", "Time Modified", "File Size", "Starting Cluster");
+    
     for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
-    {
+    {   
+
+        
 
         if (!(FLAGS_SET(rootDir[i]->DIR_Attr, VOL_NAME | SYSTEM | HIDDEN | READ_ONLY) && FLAGS_NOT_SET(rootDir[i]->DIR_Attr, ARCHIVE | DIRECTORY)))
         {
@@ -201,10 +205,21 @@ int main()
             {
                 char name[13];
                 convertToNameString(rootDir[i]->DIR_Name, name);
-                printf("%s\n", name);
+                printf("%-30s", name);
+                printf("%c%c%c%c%c%c",
+                       (rootDir[i]->DIR_Attr & 0x20) ? 'A' : '-',
+                       (rootDir[i]->DIR_Attr & 0x10) ? 'D' : '-',
+                       (rootDir[i]->DIR_Attr & 0x08) ? 'V' : '-',
+                       (rootDir[i]->DIR_Attr & 0x04) ? 'S' : '-',
+                       (rootDir[i]->DIR_Attr & 0x02) ? 'H' : '-',
+                       (rootDir[i]->DIR_Attr & 0x01) ? 'R' : '-');
+                printf("%20d/%d/%d",((rootDir[i]->DIR_WrtDate)>>9)+1980,((rootDir[i]->DIR_WrtDate)>>5)&0b1111,(rootDir[i]->DIR_WrtDate)&0b11111);
+                printf("%20d:%d:%d",((rootDir[i]->DIR_WrtTime)>>11),((rootDir[i]->DIR_WrtTime)>>5)&0b111111,((rootDir[i]->DIR_WrtTime)&0b11111)*2);
+                printf("%20d bytes", rootDir[i]->DIR_FileSize);
+                printf("%20d\n", ((rootDir[i]->DIR_FstClusHI)<<16|(rootDir[i]->DIR_FstClusLO)));
             }
         }
-    }
+    }  
 
     ListHead *cluster = clusterCompiler(FAT, 5);
     freeList(cluster);
@@ -225,6 +240,7 @@ int main()
     {
         free(rootDir[i]);
     }
+    free(rootDir);
     free(bootSector);
     free(FAT);
 }
