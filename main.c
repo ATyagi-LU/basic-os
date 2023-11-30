@@ -6,7 +6,9 @@
 #define FAT_SIZE(bootSector) (((bootSector)->BPB_BytsPerSec) * ((bootSector)->BPB_FATSz16))
 #define FAT_OFFSET(bootSector) ((((bootSector)->BPB_RsvdSecCnt) * ((bootSector)->BPB_BytsPerSec)))
 #define DIR_OFFSET(bootSector) (((bootSector)->BPB_RsvdSecCnt + ((bootSector)->BPB_NumFATs * (bootSector)->BPB_FATSz16)) * (bootSector)->BPB_BytsPerSec)
-#define DIR_SIZE(bootSector) ((bootSector)->BPB_RootEntCnt * sizeof(EntryStructure))
+#define DIR_SIZE(bootSector) ((bootSector)->BPB_RootEntCnt * sizeof(ShortDirEntry))
+#define CLUSTER_SIZE(bootSector) ((bootSector)->BPB_SecPerClus * (bootSector)->BPB_BytsPerSec)
+#define DATA_OFFSET(bootSector) (FAT_OFFSET(bootSector)+FAT_SIZE(bootSector)+DIR_SIZE(bootSector))
 #define FLAGS_SET(entry, mask) (((entry) & (mask)) == (mask))
 #define FLAGS_NOT_SET(entry, mask) (((entry) & (mask)) == 0)
 #define ARCHIVE 0b00100000
@@ -15,6 +17,23 @@
 #define SYSTEM 0b00000100
 #define HIDDEN 0b00000010
 #define READ_ONLY 0b00000001
+
+typedef struct Volume
+{
+    uint16_t * FAT;
+    BootSector * bootSector;
+    int fd;
+    int startCluster;
+
+} Volume;
+
+typedef struct File
+{   
+    off_t offset;
+    int size;
+    uint8_t * data;
+
+} File;
 
 typedef struct Node
 {
@@ -43,7 +62,7 @@ typedef struct __attribute__((__packed__))
     uint16_t DIR_FstClusLO;   // Lower 16 bits file's 1st cluster
     uint32_t DIR_FileSize;    // File size in bytes
 
-} EntryStructure;
+} ShortDirEntry;
 
 typedef struct __attribute__((__packed__))
 {
@@ -149,11 +168,11 @@ int reader(char *path, void *out, size_t bytes, off_t offset)
     return size;
 }
 
-ListHead *clusterCompiler(uint16_t *FAT, uint16_t index)
+ListHead *clusterCompiler(uint16_t *FAT, uint32_t index)
 {
     ListHead *clusterList = createList();
-    uint16_t clusterCursor = index;
-    while ((clusterCursor < 0xFFF8) && (clusterCursor > 1))
+    uint32_t clusterCursor = index;
+    while ((clusterCursor < 0x0000FFF8) && (clusterCursor > 1))
     {
         addNode(clusterList, clusterCursor);
         clusterCursor = FAT[clusterCursor];
@@ -161,6 +180,33 @@ ListHead *clusterCompiler(uint16_t *FAT, uint16_t index)
 
     return clusterList;
 }
+
+int clusterCounter(ListHead * list){
+    int size = 0;
+    Node * currentNode = list->nextNode;
+    while (currentNode->nextNode != NULL){
+        size++;
+        currentNode = currentNode->nextNode;
+    }
+    return size;
+}
+
+extern File *openFile( Volume * vol, ShortDirEntry * ent){
+    File * file = (File *) malloc(sizeof(File));
+    file->size = ent->DIR_FileSize;
+    file->offset = 0;
+    ListHead * clusterList = clusterCompiler(vol->FAT,(ent->DIR_FstClusHI)<<16|(ent->DIR_FstClusLO));
+    int clusterSize =clusterCounter(clusterList);
+    file->data = (uint8_t*) malloc(sizeof(uint8_t)*clusterSize);
+    off_t dataOffset = DATA_OFFSET((vol->bootSector));
+    Node * currentNode = clusterList->nextNode;
+    int count = 0;
+    while (currentNode->nextNode != NULL){
+        reader("fat16.img",file->data[count],sizeof(uint8_t),(dataOffset + currentNode->data - 2));
+        count++;
+    }
+
+};
 
 int main()
 {
@@ -181,20 +227,18 @@ int main()
         return -1;
     }
 
-    EntryStructure **rootDir = (EntryStructure**) malloc(DIR_SIZE(bootSector));
+    ShortDirEntry **rootDir = (ShortDirEntry**) malloc(DIR_SIZE(bootSector));
 
     for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
     {
-        EntryStructure *entry = (EntryStructure *)malloc(sizeof(EntryStructure));
-        reader("fat16.img", entry, sizeof(EntryStructure), (DIR_OFFSET(bootSector) + (i * sizeof(EntryStructure))));
+        ShortDirEntry *entry = (ShortDirEntry *)malloc(sizeof(ShortDirEntry));
+        reader("fat16.img", entry, sizeof(ShortDirEntry), (DIR_OFFSET(bootSector) + (i * sizeof(ShortDirEntry))));
         rootDir[i] = entry;
     }
     printf("%-30s%s%20s%28s%21s%20s\n","Filename", "File Attributes", "Date Modified", "Time Modified", "File Size", "Starting Cluster");
     
     for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
     {   
-
-        
 
         if (!(FLAGS_SET(rootDir[i]->DIR_Attr, VOL_NAME | SYSTEM | HIDDEN | READ_ONLY) && FLAGS_NOT_SET(rootDir[i]->DIR_Attr, ARCHIVE | DIRECTORY)))
         {
@@ -221,7 +265,7 @@ int main()
         }
     }  
 
-    ListHead *cluster = clusterCompiler(FAT, 3);
+    ListHead *cluster = clusterCompiler(FAT, 4);
     freeList(cluster);
 
     printf(
