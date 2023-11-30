@@ -394,10 +394,6 @@ int main()
             
         }
 
-
-
-
-
         if (rootDir[i]->DIR_Name[0] == 0x0)
                 break;
 
