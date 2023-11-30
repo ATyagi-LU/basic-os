@@ -8,7 +8,7 @@
 #define DIR_OFFSET(bootSector) (((bootSector)->BPB_RsvdSecCnt + ((bootSector)->BPB_NumFATs * (bootSector)->BPB_FATSz16)) * (bootSector)->BPB_BytsPerSec)
 #define DIR_SIZE(bootSector) ((bootSector)->BPB_RootEntCnt * sizeof(ShortDirEntry))
 #define CLUSTER_SIZE(bootSector) ((bootSector)->BPB_SecPerClus * (bootSector)->BPB_BytsPerSec)
-#define DATA_OFFSET(bootSector) (FAT_OFFSET(bootSector)+FAT_SIZE(bootSector)+DIR_SIZE(bootSector))
+#define DATA_OFFSET(bootSector) (DIR_OFFSET(bootSector)+ DIR_SIZE(bootSector))
 #define FLAGS_SET(entry, mask) (((entry) & (mask)) == (mask))
 #define FLAGS_NOT_SET(entry, mask) (((entry) & (mask)) == 0)
 #define ARCHIVE 0b00100000
@@ -17,23 +17,9 @@
 #define SYSTEM 0b00000100
 #define HIDDEN 0b00000010
 #define READ_ONLY 0b00000001
-
-typedef struct Volume
-{
-    uint16_t * FAT;
-    BootSector * bootSector;
-    int fd;
-    int startCluster;
-
-} Volume;
-
-typedef struct File
-{   
-    off_t offset;
-    int size;
-    uint8_t * data;
-
-} File;
+#define FSEEK_SET 0
+#define FSEEK_CUR 1
+#define FSEEK_END 2
 
 typedef struct Node
 {
@@ -46,6 +32,18 @@ typedef struct
     Node *nextNode;
     Node *lastNode;
 } ListHead;
+
+typedef struct __attribute__((__packed__))
+{
+    uint8_t LDIR_Ord; // Order/ position in sequence/ set
+    uint8_t LDIR_Name1[ 10 ]; // First 5 UNICODE characters
+    uint8_t LDIR_Attr; // = ATTR_LONG_NAME (xx001111)
+    uint8_t LDIR_Type; // Should = 0
+    uint8_t LDIR_Chksum; // Checksum of short name
+    uint8_t LDIR_Name2[ 12 ]; // Middle 6 UNICODE characters
+    uint16_t LDIR_FstClusLO; // MUST be zero
+    uint8_t LDIR_Name3[ 4 ]; // Last 2 UNICODE characters
+} LongDirEntry;
 
 typedef struct __attribute__((__packed__))
 {
@@ -87,6 +85,25 @@ typedef struct __attribute__((__packed__))
     uint8_t BS_VolLab[11];    // Non zero terminated string
     uint8_t BS_FilSysType[8]; // e.g. 'FAT16' (Not 0 terms.)
 } BootSector;
+
+
+
+typedef struct Volume
+{
+    uint16_t *FAT;
+    BootSector *bootSector;
+    char * path;
+
+} Volume;
+
+typedef struct File
+{
+    off_t offset;
+    int size;
+    ListHead *clusterList;
+    Volume * fileVolume;
+
+} File;
 
 void convertToNameString(uint8_t *name, char *output)
 {
@@ -181,110 +198,256 @@ ListHead *clusterCompiler(uint16_t *FAT, uint32_t index)
     return clusterList;
 }
 
-int clusterCounter(ListHead * list){
+int clusterCounter(ListHead *list)
+{
     int size = 0;
-    Node * currentNode = list->nextNode;
-    while (currentNode->nextNode != NULL){
+    Node *currentNode = list->nextNode;
+    while (currentNode->nextNode != NULL)
+    {
         size++;
         currentNode = currentNode->nextNode;
     }
     return size;
 }
 
-extern File *openFile( Volume * vol, ShortDirEntry * ent){
-    File * file = (File *) malloc(sizeof(File));
+extern File *openFile(Volume *vol, ShortDirEntry *ent)
+{
+    /*File * file = (File *) malloc(sizeof(File));
     file->size = ent->DIR_FileSize;
     file->offset = 0;
     ListHead * clusterList = clusterCompiler(vol->FAT,(ent->DIR_FstClusHI)<<16|(ent->DIR_FstClusLO));
-    int clusterSize =clusterCounter(clusterList);
-    file->data = (uint8_t*) malloc(sizeof(uint8_t)*clusterSize);
-    off_t dataOffset = DATA_OFFSET((vol->bootSector));
+    uint8_t * dataRead = (uint8_t*) malloc(ent->DIR_FileSize);
+
     Node * currentNode = clusterList->nextNode;
-    int count = 0;
+    off_t clusterOffset = DATA_OFFSET((vol->bootSector)) + currentNode->data - 2;
     while (currentNode->nextNode != NULL){
-        reader("fat16.img",file->data[count],sizeof(uint8_t),(dataOffset + currentNode->data - 2));
-        count++;
+        uint8_t * buffer = (uint8_t*) malloc(sizeof(uint8_t));
+        for(int i = 0; i<ent->DIR_FileSize;i++){
+
+            if(i%CLUSTER_SIZE((vol->bootSector)) == 0&&i!=0){
+                currentNode = currentNode ->nextNode;
+                clusterOffset = DATA_OFFSET((vol->bootSector)) + currentNode->data -2;
+            }
+
+            reader("fat16.img", buffer, sizeof(uint8_t),clusterOffset);
+            dataRead[i] = buffer;
+        }
+        free(buffer);}*/
+
+    File *file = (File *)malloc(sizeof(File));
+    if (FLAGS_NOT_SET(ent->DIR_Attr, VOL_NAME | DIRECTORY))
+    {
+        file->clusterList = clusterCompiler(vol->FAT, (ent->DIR_FstClusHI) << 16 | (ent->DIR_FstClusLO));
+        file->offset = 0;
+        file->size = ent->DIR_FileSize;
+        file->fileVolume = vol;
+        return file;
     }
+    else
+    {
+        return NULL;
+    }
+};
+
+extern off_t seekFile(File *file, off_t offset, int whence)
+{
+
+    switch (whence)
+    {
+    case FSEEK_SET:
+        if (offset < 0)
+        {
+            printf("Offset size not valid.");
+            return -1;
+        }
+        file->offset = offset;
+        return file->offset;
+    case FSEEK_CUR:
+        if (file->offset + offset < 0)
+        {
+            printf("Offset size not valid.");
+            return -1;
+        }
+        file->offset += offset;
+        return file->offset;
+    case FSEEK_END:
+        if (file->size + offset < 0)
+        {
+            printf("Offset size not valid.");
+            return -1;
+        }
+        file->offset = file->size;
+        return file->offset;
+
+    default:
+        return -1;
+    }
+};
+
+extern void closeFile(File *file)
+{
+    freeList(file->clusterList);
+    free(file);
+};
+
+extern ssize_t readFile(File *file, void *buffer, size_t length)
+{
+
+    int clusterIndex = file->offset / CLUSTER_SIZE(file->fileVolume->bootSector);
+    int startRead = file->offset % CLUSTER_SIZE(file->fileVolume->bootSector);
+    ssize_t totalBytesRead = 0;
+    if (length > (file->size) - (file->offset))
+    {
+        length = file->size - file->offset;
+    }
+    Node *currentNode = file->clusterList->nextNode;
+    for (int i = 0; i < clusterIndex && currentNode != NULL; i++)
+    {
+        currentNode = currentNode->nextNode;
+    }
+    for (; currentNode != NULL && length > 0; currentNode = currentNode->nextNode){
+        off_t offset = DATA_OFFSET(file->fileVolume->bootSector) + ((currentNode->data - 2)*CLUSTER_SIZE(file->fileVolume->bootSector)) + startRead;
+        int cap = CLUSTER_SIZE(file->fileVolume->bootSector) - startRead;
+        int bytesRead;
+        if (cap<length){
+            bytesRead = reader(file->fileVolume->path,buffer,cap,offset);
+        }
+        else{
+            bytesRead = reader(file->fileVolume->path,buffer,length,offset);
+        }
+        
+        if (bytesRead == -1)
+        {
+            printf("Invalid file.");
+            return -1;
+        }
+
+        length -= bytesRead;
+        buffer += bytesRead;
+        totalBytesRead += bytesRead;
+        seekFile(file,bytesRead,FSEEK_CUR);
+    }
+
+    return totalBytesRead;
 
 };
 
-int main()
-{
+Volume * loadVol (char * path){
+    Volume * vol = (Volume *) malloc(sizeof(Volume));
+    vol->path = path;
 
     BootSector *bootSector = (BootSector *)malloc(sizeof(BootSector));
 
-    if ((reader("fat16.img", bootSector, sizeof(BootSector), 0)) == -1)
+    if ((reader(path, bootSector, sizeof(BootSector), 0)) == -1)
     {
         printf("Invalid file.");
-        return -1;
+        return NULL;
     }
 
     uint16_t *FAT = (uint16_t *)malloc(FAT_SIZE(bootSector));
 
-    if ((reader("fat16.img", FAT, FAT_SIZE(bootSector), FAT_OFFSET(bootSector))) == -1)
+    if ((reader(path, FAT, FAT_SIZE(bootSector), FAT_OFFSET(bootSector))) == -1)
     {
         printf("Invalid file.");
-        return -1;
+        return NULL;
     }
 
-    ShortDirEntry **rootDir = (ShortDirEntry**) malloc(DIR_SIZE(bootSector));
+    vol->FAT = FAT;
+    vol->bootSector = bootSector;
 
-    for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
+    return vol;
+}
+
+void UTF16ToASCII(uint8_t* utf16, char* ASCIIOut, int length){
+    for(int i = 0;i < length;i++){
+        ASCIIOut[i] = utf16[i*2];
+    }
+}
+
+int main()
+{
+
+    Volume * volume = loadVol("fat16.img");
+
+    ShortDirEntry **rootDir = (ShortDirEntry **)malloc(DIR_SIZE(volume->bootSector));
+
+    for (int i = 0; i < volume->bootSector->BPB_RootEntCnt; i++)
     {
         ShortDirEntry *entry = (ShortDirEntry *)malloc(sizeof(ShortDirEntry));
-        reader("fat16.img", entry, sizeof(ShortDirEntry), (DIR_OFFSET(bootSector) + (i * sizeof(ShortDirEntry))));
+        reader(volume->path, entry, sizeof(ShortDirEntry), (DIR_OFFSET(volume->bootSector) + (i * sizeof(ShortDirEntry))));
         rootDir[i] = entry;
     }
-    printf("%-30s%s%20s%28s%21s%20s\n","Filename", "File Attributes", "Date Modified", "Time Modified", "File Size", "Starting Cluster");
-    
-    for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
-    {   
+    printf("%-30s%s%20s%28s%21s%20s  %s\n", "Filename", "File Attributes", "Date Modified", "Time Modified", "File Size", "Starting Cluster", "Long Filename");
 
-        if (!(FLAGS_SET(rootDir[i]->DIR_Attr, VOL_NAME | SYSTEM | HIDDEN | READ_ONLY) && FLAGS_NOT_SET(rootDir[i]->DIR_Attr, ARCHIVE | DIRECTORY)))
-        {
-            if (rootDir[i]->DIR_Name[0] == 0x0)
+    for (int i = 0; i < volume->bootSector->BPB_RootEntCnt; i++)
+    {
+
+        int longNameLength = ((((LongDirEntry*) rootDir[i])->LDIR_Ord & 0b1111)*13);
+        char longName[longNameLength+1];
+        longName[longNameLength] = '\0';
+        for(;i<volume->bootSector->BPB_RootEntCnt&&(FLAGS_SET(rootDir[i]->DIR_Attr, VOL_NAME | SYSTEM | HIDDEN | READ_ONLY) && FLAGS_NOT_SET(rootDir[i]->DIR_Attr, ARCHIVE | DIRECTORY));i++){
+            LongDirEntry * longEnt = (LongDirEntry *) rootDir[i];
+            longNameLength -= 13;
+            UTF16ToASCII(longEnt->LDIR_Name1,longName+longNameLength,5);
+            UTF16ToASCII(longEnt->LDIR_Name2,longName+longNameLength+5,6);
+            UTF16ToASCII(longEnt->LDIR_Name3,longName+longNameLength+11,2);
+            
+        }
+
+
+
+
+
+        if (rootDir[i]->DIR_Name[0] == 0x0)
                 break;
 
-            if (rootDir[i]->DIR_Name[0] != 0xE5)
-            {
-                char name[13];
-                convertToNameString(rootDir[i]->DIR_Name, name);
-                printf("%-30s", name);
-                printf("%c%c%c%c%c%c",
-                       (rootDir[i]->DIR_Attr & 0x20) ? 'A' : '-',
-                       (rootDir[i]->DIR_Attr & 0x10) ? 'D' : '-',
-                       (rootDir[i]->DIR_Attr & 0x08) ? 'V' : '-',
-                       (rootDir[i]->DIR_Attr & 0x04) ? 'S' : '-',
-                       (rootDir[i]->DIR_Attr & 0x02) ? 'H' : '-',
-                       (rootDir[i]->DIR_Attr & 0x01) ? 'R' : '-');
-                printf("%20d/%d/%d",((rootDir[i]->DIR_WrtDate)>>9)+1980,((rootDir[i]->DIR_WrtDate)>>5)&0b1111,(rootDir[i]->DIR_WrtDate)&0b11111);
-                printf("%20d:%d:%d",((rootDir[i]->DIR_WrtTime)>>11),((rootDir[i]->DIR_WrtTime)>>5)&0b111111,((rootDir[i]->DIR_WrtTime)&0b11111)*2);
-                printf("%20d bytes", rootDir[i]->DIR_FileSize);
-                printf("%20d\n", ((rootDir[i]->DIR_FstClusHI)<<16|(rootDir[i]->DIR_FstClusLO)));
-            }
+        if (rootDir[i]->DIR_Name[0] != 0xE5)
+        {
+            char name[13];
+            convertToNameString(rootDir[i]->DIR_Name, name);
+            printf("%-30s", name);
+            printf("%c%c%c%c%c%c",
+                    (rootDir[i]->DIR_Attr & 0x20) ? 'A' : '-',
+                    (rootDir[i]->DIR_Attr & 0x10) ? 'D' : '-',
+                    (rootDir[i]->DIR_Attr & 0x08) ? 'V' : '-',
+                    (rootDir[i]->DIR_Attr & 0x04) ? 'S' : '-',
+                    (rootDir[i]->DIR_Attr & 0x02) ? 'H' : '-',
+                    (rootDir[i]->DIR_Attr & 0x01) ? 'R' : '-');
+            printf("%20d/%d/%d", ((rootDir[i]->DIR_WrtDate) >> 9) + 1980, ((rootDir[i]->DIR_WrtDate) >> 5) & 0b1111, (rootDir[i]->DIR_WrtDate) & 0b11111);
+            printf("%20d:%d:%d", ((rootDir[i]->DIR_WrtTime) >> 11), ((rootDir[i]->DIR_WrtTime) >> 5) & 0b111111, ((rootDir[i]->DIR_WrtTime) & 0b11111) * 2);
+            printf("%20d bytes", rootDir[i]->DIR_FileSize);
+            printf("%20d  ", ((rootDir[i]->DIR_FstClusHI) << 16 | (rootDir[i]->DIR_FstClusLO)));
+            printf("%s\n",longName);
         }
-    }  
+    }
 
-    ListHead *cluster = clusterCompiler(FAT, 4);
+
+    File *file = openFile(volume, rootDir[18]);
+    char buffer[file->size];
+    readFile(file,buffer,file->size);
+    printf("%s\n",buffer);
+    closeFile(file);
+    ListHead *cluster = clusterCompiler(volume->FAT, 4);
     freeList(cluster);
 
     printf(
         "%-6d Bytes Per Sector\n%-6d Sectors per Cluster\n%-6d Reserved Sector Count\n%-6d Number of copies of FAT\n%-6d Size of root DIR\n%-6d Sectors\n%-6d Sectors in FAT\n%-6d Sectors if BPB_TotSec16==0\n%.11sNon zero terminated string\n",
-        bootSector->BPB_BytsPerSec,
-        bootSector->BPB_SecPerClus,
-        bootSector->BPB_RsvdSecCnt,
-        bootSector->BPB_NumFATs,
-        bootSector->BPB_RootEntCnt,
-        bootSector->BPB_TotSec16,
-        bootSector->BPB_FATSz16,
-        bootSector->BPB_TotSec32,
-        bootSector->BS_VolLab);
+        volume->bootSector->BPB_BytsPerSec,
+        volume->bootSector->BPB_SecPerClus,
+        volume->bootSector->BPB_RsvdSecCnt,
+        volume->bootSector->BPB_NumFATs,
+        volume->bootSector->BPB_RootEntCnt,
+        volume->bootSector->BPB_TotSec16,
+        volume->bootSector->BPB_FATSz16,
+        volume->bootSector->BPB_TotSec32,
+        volume->bootSector->BS_VolLab);
 
-    for (int i = 0; i < bootSector->BPB_RootEntCnt; i++)
+    for (int i = 0; i < volume->bootSector->BPB_RootEntCnt; i++)
     {
         free(rootDir[i]);
     }
     free(rootDir);
-    free(bootSector);
-    free(FAT);
+    free(volume->bootSector);
+    free(volume->FAT);
+    free(volume);
 }
