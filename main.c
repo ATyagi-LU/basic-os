@@ -21,6 +21,7 @@
 #define FSEEK_CUR 1
 #define FSEEK_END 2
 
+//linked list structures
 typedef struct Node
 {
     uint16_t data;
@@ -87,7 +88,7 @@ typedef struct __attribute__((__packed__))
 } BootSector;
 
 
-
+//volume structure
 typedef struct Volume
 {
     uint16_t *FAT;
@@ -96,6 +97,7 @@ typedef struct Volume
 
 } Volume;
 
+//File structure
 typedef struct File
 {
     off_t offset;
@@ -105,54 +107,58 @@ typedef struct File
 
 } File;
 
+//name converter
 void convertToNameString(uint8_t *name, char *output)
 {
     int i, j = 0;
     for (i = 0; i < 8; i++)
     {
-        if (name[i] != ' ')
+        if (name[i] != ' ') //clear trailing whitespace for the 8 part of the 8.3
         {
             output[j] = name[i];
             j++;
         }
     }
-    if (!((name[8] == ' ') && (name[9] == ' ') && (name[10] == ' ')))
+    if (!((name[8] == ' ') && (name[9] == ' ') && (name[10] == ' '))) //check if file extension empty
     {
-        output[j++] = '.';
+        output[j++] = '.'; //add the dot in the 9th slot (name[8])
         for (i = 8; i < 11; i++)
         {
-            if (name[i] != ' ')
+            if (name[i] != ' ') 
             {
-                output[j] = name[i];
+                output[j] = name[i]; //clear trailing whitespace for the 3 part of the 8.3
                 j++;
             }
         }
     }
-    output[j] = '\0';
+    output[j] = '\0'; //add null terminator
 }
 
+//create list function
 ListHead *createList()
 {
-    ListHead *list = (ListHead *)malloc(sizeof(ListHead));
-    list->nextNode = NULL;
-    list->lastNode = NULL;
+    ListHead *list = (ListHead *)malloc(sizeof(ListHead)); //malloc list
+    list->nextNode = NULL; //init nextnode
+    list->lastNode = NULL; //init lastnode
     return list;
 }
 
+//add node function
 void addNode(ListHead *list, uint16_t data)
 {
-    Node *addedNode = (Node *)malloc(sizeof(Node));
-    addedNode->data = data;
-    addedNode->nextNode = NULL;
-    if (list->nextNode == NULL)
-        list->nextNode = addedNode;
+    Node *addedNode = (Node *)malloc(sizeof(Node)); //malloc node
+    addedNode->data = data; //allocate data
+    addedNode->nextNode = NULL; //add nextnode to be null
+    if (list->nextNode == NULL) //check if start of the list
+        list->nextNode = addedNode; //set the next node to this node
 
     else
-        list->lastNode->nextNode = addedNode;
+        list->lastNode->nextNode = addedNode; //set the last node to point to the added node
 
-    list->lastNode = addedNode;
+    list->lastNode = addedNode; //make the last node the added node
 }
 
+//free the elements in the list, then free the listhead itself
 void freeList(ListHead *list)
 {
     Node *node = list->nextNode;
@@ -165,23 +171,24 @@ void freeList(ListHead *list)
     free(list);
 }
 
+//reader function
 int reader(char *path, void *out, size_t bytes, off_t offset)
 {
-    int fd = open(path, 0);
-    if (fd == -1)
+    int fd = open(path, 0); //open the file at path and get the file desc
+    if (fd == -1) //error handle the file desc
     {
         printf("Invalid Filename or Path.");
         return -1;
     }
-    lseek(fd, offset, SEEK_SET);
-    int size = read(fd, out, bytes);
-    if (size == -1)
+    lseek(fd, offset, SEEK_SET); //seek to the desire offset
+    int size = read(fd, out, bytes); //read the desired bytes into the output
+    if (size == -1) //error handle the read
     {
         printf("Invalid file.");
-        close(fd);
+        close(fd); //close in this case
         return -1;
     }
-    close(fd);
+    close(fd); //close
     return size;
 }
 
