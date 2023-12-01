@@ -212,27 +212,6 @@ int clusterCounter(ListHead *list)
 
 extern File *openFile(Volume *vol, ShortDirEntry *ent)
 {
-    /*File * file = (File *) malloc(sizeof(File));
-    file->size = ent->DIR_FileSize;
-    file->offset = 0;
-    ListHead * clusterList = clusterCompiler(vol->FAT,(ent->DIR_FstClusHI)<<16|(ent->DIR_FstClusLO));
-    uint8_t * dataRead = (uint8_t*) malloc(ent->DIR_FileSize);
-
-    Node * currentNode = clusterList->nextNode;
-    off_t clusterOffset = DATA_OFFSET((vol->bootSector)) + currentNode->data - 2;
-    while (currentNode->nextNode != NULL){
-        uint8_t * buffer = (uint8_t*) malloc(sizeof(uint8_t));
-        for(int i = 0; i<ent->DIR_FileSize;i++){
-
-            if(i%CLUSTER_SIZE((vol->bootSector)) == 0&&i!=0){
-                currentNode = currentNode ->nextNode;
-                clusterOffset = DATA_OFFSET((vol->bootSector)) + currentNode->data -2;
-            }
-
-            reader("fat16.img", buffer, sizeof(uint8_t),clusterOffset);
-            dataRead[i] = buffer;
-        }
-        free(buffer);}*/
 
     File *file = (File *)malloc(sizeof(File));
     if (FLAGS_NOT_SET(ent->DIR_Attr, VOL_NAME | DIRECTORY))
